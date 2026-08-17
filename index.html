@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PRO TRADİNG TERMİNALE</title>
+    <title>PRO SİNYALLİ BORSACI TERMINALİ</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Inter, sans-serif; }
         body { background-color: #0b0e14; color: #d1d4dc; height: 100vh; overflow: hidden; display: flex; flex-direction: column; position: relative; }
         
-        /* DİNAMİK ALEVLİ HEADER */
         .header {
             background: linear-gradient(90deg, #800000, #ff4500, #000000);
             padding: 12px 20px;
@@ -58,7 +57,6 @@
         .main-chart { flex: 1; background: #0b0e14; display: flex; flex-direction: column; position: relative; }
         #tv_chart_container { width: 100%; height: 100%; }
 
-        /* KÜÇÜLTÜLMÜŞ TAM ORTALI VOLKING TREND PANENİ */
         .chart-overlay-signal {
             position: absolute;
             top: 8px;
@@ -82,6 +80,24 @@
         .chart-overlay-title { font-size: 8px; color: #ff4500; font-weight: 900; letter-spacing: 0.8px; text-transform: uppercase; }
         .chart-overlay-value { font-size: 11px; font-weight: 900; margin-top: 1px; }
 
+        .indicator-toggle-btn {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            z-index: 10;
+            background: #ff4500;
+            color: #fff;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 0 8px rgba(255, 69, 0, 0.6);
+            transition: 0.2s;
+        }
+        .indicator-toggle-btn:hover { background: #e03e00; scale: 1.05; }
+
         .orderbook { width: 260px; background: #131722; border-left: 1px solid #2a2e39; display: flex; flex-direction: column; padding: 12px; z-index: 2; }
         .ob-title { font-size: 12px; font-weight: 800; text-align: center; margin-bottom: 10px; color: #848e9c; letter-spacing: 0.5px; }
         .ob-header, .ob-row { display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; }
@@ -93,7 +109,6 @@
         .bid-bar { background: #089981; height: 100%; text-align: center; font-size: 11px; color: #fff; line-height: 20px; transition: width 0.3s; }
         .ask-bar { background: #f23645; height: 100%; text-align: center; font-size: 11px; color: #fff; line-height: 20px; transition: width 0.3s; }
 
-        /* SAĞ ALT KÖŞE LOGO ALANI */
         .brand-logo-bottom-right {
             position: absolute;
             bottom: 10px;
@@ -115,29 +130,31 @@
             .container { flex-direction: column; overflow-y: auto; }
             .sidebar, .orderbook { width: 100%; height: 200px; }
             .chart-overlay-signal { top: 4px; padding: 2px 6px; }
+            .indicator-toggle-btn { top: 4px; right: 8px; font-size: 8px; }
         }
     </style>
 </head>
 <body>
 
     <div class="header">
-        <span>PRO TREND</span>
+        <span>🚨 CANLI SON DAKİKA BORSACI TERMINALİ</span>
         <span id="selected-pair">BTC/USDT</span>
         <span id="main-signal" class="signal-badge bg-neutral">ANALİZ EDİLİYOR...</span>
     </div>
 
     <div class="container">
         <div class="sidebar">
-            <input type="text" id="search" class="search-box" placeholder="🔍 Coin Ara..." onkeyup="filterCoins()">
+            <input type="text" id="search" class="search-box" placeholder="🔍 Coin Ara (Örn: SOL, ADA)..." oninput="handleSearch()">
             <div class="coin-list" id="coin-list"></div>
         </div>
 
         <div class="main-chart">
-            <!-- VOLKING TREND TAM ORTADA -->
             <div class="chart-overlay-signal">
-                <div class="chart-overlay-title">TREND</div>
+                <div class="chart-overlay-title">VOLKING TREND</div>
                 <div id="overlay-signal-text" class="chart-overlay-value" style="color: #fff;">ANALİZ EDİLİYOR...</div>
             </div>
+
+            <button class="indicator-toggle-btn" onclick="toggleIndicators()">⚡ VOLKING TREND AÇ/KAPAT</button>
 
             <div id="tv_chart_container"></div>
         </div>
@@ -161,7 +178,6 @@
         </div>
     </div>
 
-    <!-- SAĞ ALT KÖŞE LOGO VURGUSU -->
     <div class="brand-logo-bottom-right">🔥 VOLKING PRO</div>
 
     <script>
@@ -169,10 +185,30 @@
         Telegram.WebApp.expand();
 
         let currentSymbol = "BTCUSDT";
-        const coins = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "AVAXUSDT", "PEPEUSDT", "DOGEUSDT", "NEARUSDT"];
+        let showTrendLines = true;
+        let allPairs = [];
+        let displayedCoins = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "AVAXUSDT", "PEPEUSDT", "DOGEUSDT", "NEARUSDT", "ADAUSDT", "BNBUSDT", "LINKUSDT", "SHIBUSDT"];
         let coinData = {};
+        let ws;
+
+        async function fetchAllPairs() {
+            try {
+                const res = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+                const data = await res.json();
+                allPairs = data
+                    .filter(item => item.symbol.endsWith('USDT'))
+                    .map(item => item.symbol);
+                renderCoinList();
+                initWebSocket();
+            } catch(e) {
+                renderCoinList();
+                initWebSocket();
+            }
+        }
 
         function loadChart(symbol) {
+            const activeStudies = showTrendLines ? ["STD;Supertrend", "STD;EMA", "STD;RSI"] : ["STD;RSI"];
+
             new TradingView.widget({
                 "autosize": true,
                 "symbol": "BINANCE:" + symbol,
@@ -185,25 +221,31 @@
                 "enable_publishing": false,
                 "hide_side_toolbar": false,
                 "container_id": "tv_chart_container",
-                "studies": [
-                    "STD;Supertrend",
-                    "STD;EMA",
-                    "STD;RSI"
-                ]
+                "studies": activeStudies
             });
+        }
+
+        function toggleIndicators() {
+            showTrendLines = !showTrendLines;
+            loadChart(currentSymbol);
         }
 
         function renderCoinList() {
             const container = document.getElementById('coin-list');
             container.innerHTML = '';
-            coins.forEach(symbol => {
+            displayedCoins.forEach(symbol => {
+                const price = coinData[symbol]?.price ? `$${coinData[symbol].price}` : 'Yükleniyor...';
+                const signal = coinData[symbol]?.signalText || 'NÖTR';
+                const color = coinData[symbol]?.color || '#fff';
+                const isUp = coinData[symbol]?.change >= 0;
+
                 container.innerHTML += `
                     <div class="coin-item ${symbol === currentSymbol ? 'active' : ''}" onclick="changePair('${symbol}')">
                         <div class="coin-info">
                             <span class="coin-symbol">${symbol.replace('USDT', '')}/USDT</span>
-                            <span class="coin-signal" id="signal-${symbol}">NÖTR</span>
+                            <span class="coin-signal" id="signal-${symbol}" style="color: ${color}">${signal}</span>
                         </div>
-                        <span id="price-${symbol}" class="up">Yükleniyor...</span>
+                        <span id="price-${symbol}" class="${isUp ? 'up' : 'down'}">${price}</span>
                     </div>
                 `;
             });
@@ -217,59 +259,78 @@
             fetchOrderBook();
         }
 
-        const ws = new WebSocket('wss://stream.binance.com:9443/ws/' + coins.map(c => c.toLowerCase() + '@ticker').join('/'));
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            const symbol = data.s;
-            const price = parseFloat(data.c).toFixed(parseFloat(data.c) < 1 ? 4 : 2);
-            const change = parseFloat(data.P);
-
-            coinData[symbol] = { price, change };
-
-            const elem = document.getElementById(`price-${symbol}`);
-            if (elem) {
-                elem.className = change >= 0 ? 'up' : 'down';
-                elem.innerText = `$${price}`;
+        function handleSearch() {
+            const query = document.getElementById('search').value.trim().toUpperCase();
+            if (!query) {
+                displayedCoins = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "AVAXUSDT", "PEPEUSDT", "DOGEUSDT", "NEARUSDT", "ADAUSDT", "BNBUSDT", "LINKUSDT", "SHIBUSDT"];
+            } else {
+                const matches = allPairs.filter(s => s.replace('USDT','').includes(query) || s.includes(query));
+                displayedCoins = matches.slice(0, 30);
             }
+            renderCoinList();
+            initWebSocket();
+        }
 
-            let signalText = "NÖTR ⚪";
-            let signalClass = "bg-neutral";
-            let overlayColor = "#fff";
+        function initWebSocket() {
+            if (ws) ws.close();
+            if (displayedCoins.length === 0) return;
 
-            if (change >= 2.0) {
-                signalText = "GÜÇLÜ AL 🚀";
-                signalClass = "bg-strong-buy";
-                overlayColor = "#00c853";
-            } else if (change > 0.2) {
-                signalText = "AL 🟢";
-                signalClass = "bg-buy";
-                overlayColor = "#089981";
-            } else if (change <= -2.0) {
-                signalText = "GÜÇLÜ SAT 💥";
-                signalClass = "bg-strong-sell";
-                overlayColor = "#d50000";
-            } else if (change < -0.2) {
-                signalText = "SAT 🔴";
-                signalClass = "bg-sell";
-                overlayColor = "#f23645";
-            }
+            const streams = displayedCoins.map(c => c.toLowerCase() + '@ticker').join('/');
+            ws = new WebSocket('wss://stream.binance.com:9443/ws/' + streams);
 
-            const listSignalElem = document.getElementById(`signal-${symbol}`);
-            if (listSignalElem) {
-                listSignalElem.innerText = signalText;
-                listSignalElem.style.color = overlayColor;
-            }
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                const symbol = data.s;
+                const price = parseFloat(data.c).toFixed(parseFloat(data.c) < 1 ? 4 : 2);
+                const change = parseFloat(data.P);
 
-            if (symbol === currentSymbol) {
-                const mainSignalElem = document.getElementById('main-signal');
-                mainSignalElem.innerText = "SİNYAL: " + signalText;
-                mainSignalElem.className = "signal-badge " + signalClass;
+                let signalText = "NÖTR ⚪";
+                let signalClass = "bg-neutral";
+                let overlayColor = "#fff";
 
-                const overlaySignal = document.getElementById('overlay-signal-text');
-                overlaySignal.innerText = signalText;
-                overlaySignal.style.color = overlayColor;
-            }
-        };
+                if (change >= 2.0) {
+                    signalText = "GÜÇLÜ AL 🚀";
+                    signalClass = "bg-strong-buy";
+                    overlayColor = "#00c853";
+                } else if (change > 0.2) {
+                    signalText = "AL 🟢";
+                    signalClass = "bg-buy";
+                    overlayColor = "#089981";
+                } else if (change <= -2.0) {
+                    signalText = "GÜÇLÜ SAT 💥";
+                    signalClass = "bg-strong-sell";
+                    overlayColor = "#d50000";
+                } else if (change < -0.2) {
+                    signalText = "SAT 🔴";
+                    signalClass = "bg-sell";
+                    overlayColor = "#f23645";
+                }
+
+                coinData[symbol] = { price, change, signalText, color: overlayColor };
+
+                const priceElem = document.getElementById(`price-${symbol}`);
+                if (priceElem) {
+                    priceElem.className = change >= 0 ? 'up' : 'down';
+                    priceElem.innerText = `$${price}`;
+                }
+
+                const listSignalElem = document.getElementById(`signal-${symbol}`);
+                if (listSignalElem) {
+                    listSignalElem.innerText = signalText;
+                    listSignalElem.style.color = overlayColor;
+                }
+
+                if (symbol === currentSymbol) {
+                    const mainSignalElem = document.getElementById('main-signal');
+                    mainSignalElem.innerText = "SİNYAL: " + signalText;
+                    mainSignalElem.className = "signal-badge " + signalClass;
+
+                    const overlaySignal = document.getElementById('overlay-signal-text');
+                    overlaySignal.innerText = signalText;
+                    overlaySignal.style.color = overlayColor;
+                }
+            };
+        }
 
         async function fetchOrderBook() {
             try {
@@ -300,14 +361,7 @@
             } catch(e) {}
         }
 
-        function filterCoins() {
-            let input = document.getElementById('search').value.toUpperCase();
-            document.querySelectorAll('.coin-item').forEach(item => {
-                item.style.display = item.innerText.includes(input) ? 'flex' : 'none';
-            });
-        }
-
-        renderCoinList();
+        fetchAllPairs();
         loadChart(currentSymbol);
         fetchOrderBook();
         setInterval(fetchOrderBook, 1500);
