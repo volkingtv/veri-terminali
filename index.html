@@ -3,64 +3,314 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CANLI VERİ TERMINALİ</title>
+    <title>PRO TRADİNG TERMİNALE</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
     <style>
-        body {
-            background-color: #0b0e14;
-            color: #ffffff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 15px;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Inter, sans-serif; }
+        body { background-color: #0b0e14; color: #d1d4dc; height: 100vh; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+        
+        /* DİNAMİK ALEVLİ HEADER */
         .header {
-            text-align: center;
-            padding: 10px;
-            background: linear-gradient(45deg, #ff0000, #ff6a00);
-            border-radius: 10px;
-            font-weight: bold;
-            font-size: 18px;
-            box-shadow: 0 0 15px rgba(255, 106, 0, 0.6);
-            margin-bottom: 20px;
-            text-transform: uppercase;
-        }
-        .card {
-            background: #161b22;
-            border: 1px solid #2d3748;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 10px;
+            background: linear-gradient(90deg, #800000, #ff4500, #000000);
+            padding: 12px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 0 20px rgba(255, 69, 0, 0.8);
+            font-weight: 900;
+            font-size: 16px;
+            color: #fff;
+            letter-spacing: 1px;
+            border-bottom: 2px solid #ff4500;
+            z-index: 10;
         }
-        .symbol { font-weight: bold; font-size: 16px; }
-        .price { font-size: 15px; font-weight: 600; }
-        .up { color: #00ff66; text-shadow: 0 0 5px #00ff66; }
-        .down { color: #ff3333; text-shadow: 0 0 5px #ff3333; }
+
+        .signal-badge {
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            box-shadow: 0 0 12px rgba(0,0,0,0.6);
+            text-transform: uppercase;
+        }
+        .bg-strong-buy { background: #00c853; color: #fff; box-shadow: 0 0 15px #00c853; }
+        .bg-buy { background: #089981; color: #fff; }
+        .bg-neutral { background: #787b86; color: #fff; }
+        .bg-sell { background: #f23645; color: #fff; }
+        .bg-strong-sell { background: #d50000; color: #fff; box-shadow: 0 0 15px #d50000; }
+
+        .container { display: flex; flex: 1; overflow: hidden; position: relative; }
+
+        .sidebar { width: 260px; background: #131722; border-right: 1px solid #2a2e39; display: flex; flex-direction: column; z-index: 2; }
+        .search-box { padding: 12px; background: #1e222d; border: none; border-bottom: 1px solid #2a2e39; color: #fff; outline: none; font-size: 13px; }
+        .coin-list { flex: 1; overflow-y: auto; }
+        .coin-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #1e222d; cursor: pointer; transition: 0.2s; }
+        .coin-item:hover, .coin-item.active { background: #2a2e39; }
+        .coin-info { display: flex; flex-direction: column; }
+        .coin-symbol { font-weight: bold; font-size: 13px; color: #fff; }
+        .coin-signal { font-size: 10px; font-weight: 700; margin-top: 3px; }
+
+        .up { color: #089981; font-weight: 700; }
+        .down { color: #f23645; font-weight: 700; }
+
+        .main-chart { flex: 1; background: #0b0e14; display: flex; flex-direction: column; position: relative; }
+        #tv_chart_container { width: 100%; height: 100%; }
+
+        /* KÜÇÜLTÜLMÜŞ TAM ORTALI VOLKING TREND PANENİ */
+        .chart-overlay-signal {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(19, 23, 34, 0.92);
+            border: 1px solid #ff4500;
+            backdrop-filter: blur(6px);
+            padding: 3px 10px;
+            border-radius: 6px;
+            box-shadow: 0 0 12px rgba(255, 69, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            text-align: center;
+        }
+
+        .chart-overlay-title { font-size: 8px; color: #ff4500; font-weight: 900; letter-spacing: 0.8px; text-transform: uppercase; }
+        .chart-overlay-value { font-size: 11px; font-weight: 900; margin-top: 1px; }
+
+        .orderbook { width: 260px; background: #131722; border-left: 1px solid #2a2e39; display: flex; flex-direction: column; padding: 12px; z-index: 2; }
+        .ob-title { font-size: 12px; font-weight: 800; text-align: center; margin-bottom: 10px; color: #848e9c; letter-spacing: 0.5px; }
+        .ob-header, .ob-row { display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; }
+        .ob-header { color: #848e9c; border-bottom: 1px solid #2a2e39; margin-bottom: 5px; font-weight: 700; }
+        .asks .ob-row { color: #f23645; font-weight: 600; }
+        .bids .ob-row { color: #089981; font-weight: 600; }
+
+        .pressure-container { margin: 12px 0; background: #2a2e39; height: 20px; border-radius: 6px; overflow: hidden; display: flex; font-weight: 800; box-shadow: inset 0 0 5px #000; }
+        .bid-bar { background: #089981; height: 100%; text-align: center; font-size: 11px; color: #fff; line-height: 20px; transition: width 0.3s; }
+        .ask-bar { background: #f23645; height: 100%; text-align: center; font-size: 11px; color: #fff; line-height: 20px; transition: width 0.3s; }
+
+        /* SAĞ ALT KÖŞE LOGO ALANI */
+        .brand-logo-bottom-right {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #ff4500;
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 1px;
+            box-shadow: 0 0 8px rgba(255, 69, 0, 0.5);
+            pointer-events: none;
+        }
+
+        @media (max-width: 768px) {
+            .container { flex-direction: column; overflow-y: auto; }
+            .sidebar, .orderbook { width: 100%; height: 200px; }
+            .chart-overlay-signal { top: 4px; padding: 2px 6px; }
+        }
     </style>
 </head>
 <body>
-    <div class="header">🔥 CANLI VERİ TERMINALİ 🔥</div>
-    
-    <div id="market-list">
-        <div class="card">
-            <span class="symbol">THYAO.IS</span>
-            <span class="price up">312.50 TL (+2.4%)</span>
+
+    <div class="header">
+        <span>PRO TREND</span>
+        <span id="selected-pair">BTC/USDT</span>
+        <span id="main-signal" class="signal-badge bg-neutral">ANALİZ EDİLİYOR...</span>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <input type="text" id="search" class="search-box" placeholder="🔍 Coin Ara..." onkeyup="filterCoins()">
+            <div class="coin-list" id="coin-list"></div>
         </div>
-        <div class="card">
-            <span class="symbol">BETAE.IS</span>
-            <span class="price down">101.90 TL (-2.58%)</span>
+
+        <div class="main-chart">
+            <!-- VOLKING TREND TAM ORTADA -->
+            <div class="chart-overlay-signal">
+                <div class="chart-overlay-title">TREND</div>
+                <div id="overlay-signal-text" class="chart-overlay-value" style="color: #fff;">ANALİZ EDİLİYOR...</div>
+            </div>
+
+            <div id="tv_chart_container"></div>
         </div>
-        <div class="card">
-            <span class="symbol">BTC/USDT</span>
-            <span class="price up">$64,250 (+1.8%)</span>
+
+        <div class="orderbook">
+            <div class="ob-title">CANLI TAHTA BASKISI</div>
+            
+            <div class="ob-header">
+                <span>FİYAT (USDT)</span>
+                <span>MİKTAR</span>
+            </div>
+
+            <div class="asks" id="asks-container"></div>
+
+            <div class="pressure-container">
+                <div class="bid-bar" id="bid-bar" style="width: 50%;">%50</div>
+                <div class="ask-bar" id="ask-bar" style="width: 50%;">%50</div>
+            </div>
+
+            <div class="bids" id="bids-container"></div>
         </div>
     </div>
+
+    <!-- SAĞ ALT KÖŞE LOGO VURGUSU -->
+    <div class="brand-logo-bottom-right">🔥 VOLKING PRO</div>
 
     <script>
         Telegram.WebApp.ready();
         Telegram.WebApp.expand();
+
+        let currentSymbol = "BTCUSDT";
+        const coins = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "AVAXUSDT", "PEPEUSDT", "DOGEUSDT", "NEARUSDT"];
+        let coinData = {};
+
+        function loadChart(symbol) {
+            new TradingView.widget({
+                "autosize": true,
+                "symbol": "BINANCE:" + symbol,
+                "interval": "1",
+                "timezone": "Etc/UTC",
+                "theme": "dark",
+                "style": "1",
+                "locale": "tr",
+                "toolbar_bg": "#f1f3f6",
+                "enable_publishing": false,
+                "hide_side_toolbar": false,
+                "container_id": "tv_chart_container",
+                "studies": [
+                    "STD;Supertrend",
+                    "STD;EMA",
+                    "STD;RSI"
+                ]
+            });
+        }
+
+        function renderCoinList() {
+            const container = document.getElementById('coin-list');
+            container.innerHTML = '';
+            coins.forEach(symbol => {
+                container.innerHTML += `
+                    <div class="coin-item ${symbol === currentSymbol ? 'active' : ''}" onclick="changePair('${symbol}')">
+                        <div class="coin-info">
+                            <span class="coin-symbol">${symbol.replace('USDT', '')}/USDT</span>
+                            <span class="coin-signal" id="signal-${symbol}">NÖTR</span>
+                        </div>
+                        <span id="price-${symbol}" class="up">Yükleniyor...</span>
+                    </div>
+                `;
+            });
+        }
+
+        function changePair(symbol) {
+            currentSymbol = symbol;
+            document.getElementById('selected-pair').innerText = symbol.replace('USDT', '') + '/USDT';
+            loadChart(symbol);
+            renderCoinList();
+            fetchOrderBook();
+        }
+
+        const ws = new WebSocket('wss://stream.binance.com:9443/ws/' + coins.map(c => c.toLowerCase() + '@ticker').join('/'));
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            const symbol = data.s;
+            const price = parseFloat(data.c).toFixed(parseFloat(data.c) < 1 ? 4 : 2);
+            const change = parseFloat(data.P);
+
+            coinData[symbol] = { price, change };
+
+            const elem = document.getElementById(`price-${symbol}`);
+            if (elem) {
+                elem.className = change >= 0 ? 'up' : 'down';
+                elem.innerText = `$${price}`;
+            }
+
+            let signalText = "NÖTR ⚪";
+            let signalClass = "bg-neutral";
+            let overlayColor = "#fff";
+
+            if (change >= 2.0) {
+                signalText = "GÜÇLÜ AL 🚀";
+                signalClass = "bg-strong-buy";
+                overlayColor = "#00c853";
+            } else if (change > 0.2) {
+                signalText = "AL 🟢";
+                signalClass = "bg-buy";
+                overlayColor = "#089981";
+            } else if (change <= -2.0) {
+                signalText = "GÜÇLÜ SAT 💥";
+                signalClass = "bg-strong-sell";
+                overlayColor = "#d50000";
+            } else if (change < -0.2) {
+                signalText = "SAT 🔴";
+                signalClass = "bg-sell";
+                overlayColor = "#f23645";
+            }
+
+            const listSignalElem = document.getElementById(`signal-${symbol}`);
+            if (listSignalElem) {
+                listSignalElem.innerText = signalText;
+                listSignalElem.style.color = overlayColor;
+            }
+
+            if (symbol === currentSymbol) {
+                const mainSignalElem = document.getElementById('main-signal');
+                mainSignalElem.innerText = "SİNYAL: " + signalText;
+                mainSignalElem.className = "signal-badge " + signalClass;
+
+                const overlaySignal = document.getElementById('overlay-signal-text');
+                overlaySignal.innerText = signalText;
+                overlaySignal.style.color = overlayColor;
+            }
+        };
+
+        async function fetchOrderBook() {
+            try {
+                const res = await fetch(`https://api.binance.com/api/v3/depth?symbol=${currentSymbol}&limit=8`);
+                const data = await res.json();
+
+                if (!data.bids || !data.asks) return;
+
+                let totalBid = data.bids.reduce((sum, item) => sum + parseFloat(item[1]), 0);
+                let totalAsk = data.asks.reduce((sum, item) => sum + parseFloat(item[1]), 0);
+                let total = totalBid + totalAsk;
+
+                let bidPct = total > 0 ? Math.round((totalBid / total) * 100) : 50;
+                let askPct = 100 - bidPct;
+
+                document.getElementById('bid-bar').style.width = bidPct + '%';
+                document.getElementById('bid-bar').innerText = '%' + bidPct;
+                document.getElementById('ask-bar').style.width = askPct + '%';
+                document.getElementById('ask-bar').innerText = '%' + askPct;
+
+                document.getElementById('asks-container').innerHTML = [...data.asks].reverse().map(a => 
+                    `<div class="ob-row"><span>$${parseFloat(a[0]).toFixed(2)}</span><span>${parseFloat(a[1]).toFixed(2)}</span></div>`
+                ).join('');
+
+                document.getElementById('bids-container').innerHTML = data.bids.map(b => 
+                    `<div class="ob-row"><span>$${parseFloat(b[0]).toFixed(2)}</span><span>${parseFloat(b[1]).toFixed(2)}</span></div>`
+                ).join('');
+            } catch(e) {}
+        }
+
+        function filterCoins() {
+            let input = document.getElementById('search').value.toUpperCase();
+            document.querySelectorAll('.coin-item').forEach(item => {
+                item.style.display = item.innerText.includes(input) ? 'flex' : 'none';
+            });
+        }
+
+        renderCoinList();
+        loadChart(currentSymbol);
+        fetchOrderBook();
+        setInterval(fetchOrderBook, 1500);
     </script>
 </body>
 </html>
