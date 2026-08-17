@@ -144,7 +144,7 @@
 
     <div class="container">
         <div class="sidebar">
-            <input type="text" id="search" class="search-box" placeholder="🔍 Coin Ara (Örn: SOL, ADA)..." oninput="handleSearch()">
+            <input type="text" id="search" class="search-box" placeholder="🔍 Coin Ara (Örn: SIX, SOL, BNB)..." oninput="filterCoins()">
             <div class="coin-list" id="coin-list"></div>
         </div>
 
@@ -186,25 +186,19 @@
 
         let currentSymbol = "BTCUSDT";
         let showTrendLines = true;
-        let allPairs = [];
-        let displayedCoins = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "AVAXUSDT", "PEPEUSDT", "DOGEUSDT", "NEARUSDT", "ADAUSDT", "BNBUSDT", "LINKUSDT", "SHIBUSDT"];
+        
+        // Genişletilmiş Coin Listesi
+        const defaultCoins = [
+            "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "AVAXUSDT", "PEPEUSDT", 
+            "DOGEUSDT", "NEARUSDT", "ADAUSDT", "BNBUSDT", "LINKUSDT", "SHIBUSDT",
+            "SUIUSDT", "APTUSDT", "MATICUSDT", "LTCUSDT", "DOTUSDT", "TRXUSDT",
+            "ARBUSDT", "OPUSDT", "INJUSDT", "TIAUSDT", "FTMUSDT", "ATOMUSDT",
+            "SIXUSDT", "FETUSDT", "RNDRUSDT", "GALAUSDT", "SANDUSDT", "MANAUSDT"
+        ];
+
+        let activeList = [...defaultCoins];
         let coinData = {};
         let ws;
-
-        async function fetchAllPairs() {
-            try {
-                const res = await fetch('https://api.binance.com/api/v3/ticker/24hr');
-                const data = await res.json();
-                allPairs = data
-                    .filter(item => item.symbol.endsWith('USDT'))
-                    .map(item => item.symbol);
-                renderCoinList();
-                initWebSocket();
-            } catch(e) {
-                renderCoinList();
-                initWebSocket();
-            }
-        }
 
         function loadChart(symbol) {
             const activeStudies = showTrendLines ? ["STD;Supertrend", "STD;EMA", "STD;RSI"] : ["STD;RSI"];
@@ -233,17 +227,19 @@
         function renderCoinList() {
             const container = document.getElementById('coin-list');
             container.innerHTML = '';
-            displayedCoins.forEach(symbol => {
-                const price = coinData[symbol]?.price ? `$${coinData[symbol].price}` : 'Yükleniyor...';
-                const signal = coinData[symbol]?.signalText || 'NÖTR';
-                const color = coinData[symbol]?.color || '#fff';
-                const isUp = coinData[symbol]?.change >= 0;
+
+            activeList.forEach(symbol => {
+                const data = coinData[symbol] || {};
+                const price = data.price ? `$${data.price}` : 'Canlı...';
+                const signalText = data.signalText || 'NÖTR';
+                const overlayColor = data.color || '#848e9c';
+                const isUp = data.change >= 0;
 
                 container.innerHTML += `
                     <div class="coin-item ${symbol === currentSymbol ? 'active' : ''}" onclick="changePair('${symbol}')">
                         <div class="coin-info">
                             <span class="coin-symbol">${symbol.replace('USDT', '')}/USDT</span>
-                            <span class="coin-signal" id="signal-${symbol}" style="color: ${color}">${signal}</span>
+                            <span class="coin-signal" id="signal-${symbol}" style="color: ${overlayColor}">${signalText}</span>
                         </div>
                         <span id="price-${symbol}" class="${isUp ? 'up' : 'down'}">${price}</span>
                     </div>
@@ -259,23 +255,28 @@
             fetchOrderBook();
         }
 
-        function handleSearch() {
-            const query = document.getElementById('search').value.trim().toUpperCase();
-            if (!query) {
-                displayedCoins = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "AVAXUSDT", "PEPEUSDT", "DOGEUSDT", "NEARUSDT", "ADAUSDT", "BNBUSDT", "LINKUSDT", "SHIBUSDT"];
+        function filterCoins() {
+            const input = document.getElementById('search').value.trim().toUpperCase();
+            
+            if (!input) {
+                activeList = [...defaultCoins];
             } else {
-                const matches = allPairs.filter(s => s.replace('USDT','').includes(query) || s.includes(query));
-                displayedCoins = matches.slice(0, 30);
+                activeList = defaultCoins.filter(c => c.includes(input));
+                // Arama listesinde yoksa yazılanı otomatik yeni coin olarak ekle
+                const customSymbol = input.endsWith("USDT") ? input : input + "USDT";
+                if (!activeList.includes(customSymbol)) {
+                    activeList.unshift(customSymbol);
+                }
             }
             renderCoinList();
-            initWebSocket();
+            connectWebSocket();
         }
 
-        function initWebSocket() {
+        function connectWebSocket() {
             if (ws) ws.close();
-            if (displayedCoins.length === 0) return;
+            if (activeList.length === 0) return;
 
-            const streams = displayedCoins.map(c => c.toLowerCase() + '@ticker').join('/');
+            const streams = activeList.map(c => c.toLowerCase() + '@ticker').join('/');
             ws = new WebSocket('wss://stream.binance.com:9443/ws/' + streams);
 
             ws.onmessage = (event) => {
@@ -361,8 +362,9 @@
             } catch(e) {}
         }
 
-        fetchAllPairs();
+        renderCoinList();
         loadChart(currentSymbol);
+        connectWebSocket();
         fetchOrderBook();
         setInterval(fetchOrderBook, 1500);
     </script>
